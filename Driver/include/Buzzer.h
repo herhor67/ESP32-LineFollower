@@ -121,6 +121,11 @@ struct Duration
 		hundredtwentyeighth = whole / 128,
 		twohundredfiftysixth = whole / 256,
 
+		x8 = octupl,
+		x4 = quadrupl,
+		x2 = doubl,
+		x1 = whole,
+		o1 = whole,
 		o2 = half,
 		o4 = quarter,
 		o8 = eighth,
