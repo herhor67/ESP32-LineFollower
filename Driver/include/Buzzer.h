@@ -6,9 +6,14 @@
 #include <esp_timer.h>
 #include <esp_err.h>
 
-enum Note
+using note_t = uint_fast16_t; // uint_fast16_t uint32_t
+using duration_t = uint32_t;
+
+enum Note : note_t
 {
+	A0 = 27,
 	B0 = 31,
+
 	C1 = 33,
 	CS1 = 35,
 	D1 = 37,
@@ -21,6 +26,7 @@ enum Note
 	A1 = 55,
 	AS1 = 58,
 	B1 = 62,
+
 	C2 = 65,
 	CS2 = 69,
 	D2 = 73,
@@ -33,6 +39,7 @@ enum Note
 	A2 = 110,
 	AS2 = 117,
 	B2 = 123,
+
 	C3 = 131,
 	CS3 = 139,
 	D3 = 147,
@@ -45,6 +52,7 @@ enum Note
 	A3 = 220,
 	AS3 = 233,
 	B3 = 247,
+
 	C4 = 262,
 	CS4 = 277,
 	D4 = 294,
@@ -57,6 +65,7 @@ enum Note
 	A4 = 440,
 	AS4 = 466,
 	B4 = 494,
+
 	C5 = 523,
 	CS5 = 554,
 	D5 = 587,
@@ -69,6 +78,7 @@ enum Note
 	A5 = 880,
 	AS5 = 932,
 	B5 = 988,
+
 	C6 = 1047,
 	CS6 = 1109,
 	D6 = 1175,
@@ -81,6 +91,7 @@ enum Note
 	A6 = 1760,
 	AS6 = 1865,
 	B6 = 1976,
+
 	C7 = 2093,
 	CS7 = 2217,
 	D7 = 2349,
@@ -93,86 +104,115 @@ enum Note
 	A7 = 3520,
 	AS7 = 3729,
 	B7 = 3951,
+
 	C8 = 4186,
 	CS8 = 4435,
 	D8 = 4699,
-	DS8 = 4978
+	DS8 = 4978,
+
+	ST1 = A3,
+	ST15 = AS3,
+	ST2 = B3,
+
+	ST3 = C4,
+	ST35 = CS4,
+	ST4 = D4,
+	ST45 = DS4,
+	ST5 = E4,
+
+	ST6 = F4,
+	ST65 = FS4,
+	ST7 = G4,
+	ST75 = GS4,
+	ST8 = A4,
+	ST85 = AS4,
+	ST9 = B4,
+
+	ST10 = C5,
+	ST105 = CS5,
+	ST11 = D5,
+	ST115 = DS5,
+	ST12 = E5,
 };
 
-struct Duration
+enum Duration : duration_t
 {
-	enum Drtn
-	{
-		whole = 1000000,
+	second = 1000 * 1000,
 
-		octupl = whole * 8,
-		large = octupl,
-		maxima = octupl,
-		quadrupl = whole * 4,
-		longa = quadrupl,
-		doubl = whole * 2,
+	x8 = second * 32,
+	x4 = second * 16,
+	x2 = second * 8,
+	x1 = second * 4,
+	o1 = second * 4,
+	o2 = second * 2,
+	o4 = second,
+	o8 = second / 2,
+	o16 = second / 4,
+	o32 = second / 8,
+	o64 = second / 16,
+	o128 = second / 32,
+	o256 = second / 64,
 
-		half = whole / 2,
-		quarter = whole / 4,
-		eighth = whole / 8,
-		sixteenth = whole / 16,
-		thirtysecond = whole / 32,
-		sixtyfourth = whole / 64,
-		hundredtwentyeighth = whole / 128,
-		twohundredfiftysixth = whole / 256,
-
-		x8 = octupl,
-		x4 = quadrupl,
-		x2 = doubl,
-		x1 = whole,
-		o1 = whole,
-		o2 = half,
-		o4 = quarter,
-		o8 = eighth,
-		o16 = sixteenth,
-		o32 = thirtysecond,
-		o64 = sixtyfourth,
-		o128 = hundredtwentyeighth,
-		o256 = twohundredfiftysixth,
-	};
+	octuplenote = x8,
+	largenote = x8,
+	maximanote = x8,
+	quadruplenote = x4,
+	longanote = x4,
+	doublenote = x2,
+	wholenote = x1,
+	halfnote = o2,
+	quarternote = o4,
+	eighthnote = o8,
+	sixteenthnote = o16,
+	thirtysecondnote = o32,
+	sixtyfourthnote = o64,
+	hundredtwentyeighthnote = o128,
+	twohundredfiftysixthnote = o256,
 };
 
 class Buzzer
 {
-	static constexpr ledc_timer_bit_t duty_res = LEDC_TIMER_5_BIT;
-	static constexpr ledc_mode_t ledc_mode = LEDC_LOW_SPEED_MODE;
-	static constexpr uint32_t duty = ((1 << duty_res) - 1) / 2; // Set duty to as close to 50% as possible
+	static constexpr ledc_timer_bit_t DUTYRES = LEDC_TIMER_12_BIT;
+	static constexpr ledc_mode_t LEDCMODE = LEDC_LOW_SPEED_MODE;
+	static constexpr uint32_t DUTY = 1 << (DUTYRES - 1); // Set DUTY to as close to 50% as possible ((1 << (DUTYRES)) - 1) / 2
 
-	ledc_timer_t timer = LEDC_TIMER_0;
-	ledc_channel_t channel = LEDC_CHANNEL_0;
 	gpio_num_t pin = GPIO_NUM_NC;
+	ledc_timer_t timer;
+	ledc_channel_t channel;
 
 	esp_timer_handle_t periodic_timer;
 
-	bool paused = true;
+	uint64_t tempo = 60 * static_cast<duration_t>(Duration::o4);
+
+	bool midsong = false;
+	bool paused = false;
 	size_t currentNote = 0;
+	uint64_t remainingTime = -1;
 
 public:
-	using note_t = uint_fast16_t; // uint_fast16_t uint32_t
-	using duration_t = uint32_t;
-
 	note_t *notes = nullptr;
 	duration_t *durations = nullptr;
 	size_t length = 0;
 	bool repeat = false;
 
-	Buzzer(ledc_timer_t, ledc_channel_t, gpio_num_t);
+	Buzzer(gpio_num_t, ledc_timer_t = static_cast<ledc_timer_t>(LEDC_TIMER_MAX - 1), ledc_channel_t = static_cast<ledc_channel_t>(LEDC_CHANNEL_MAX - 1));
 	~Buzzer();
-	void init();
+
+	void setTempo(uint32_t, Duration);
 
 	void loadSong(note_t *, duration_t *, size_t);
 	void volumeOFF();
 	void volumeON();
-	void play(bool = false);
 
+	void start(bool = false);
 	void pause();
 	void resume();
+	void end();
+	void restart();
 
 private:
+	bool checkCurrentNote();
+	void playCurrentNote();
+
 	static void callback(void *);
 };
