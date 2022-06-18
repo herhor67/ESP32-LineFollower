@@ -14,7 +14,7 @@ public:
 	T b;
 
 	constexpr Vec2(T a = 0, T b = 0) : a(a), b(b) {}
-	~Vec2() {}
+	~Vec2() = default;
 
 	constexpr Vec2<T> &operator+=(const Vec2<T> &r)
 	{
@@ -113,9 +113,7 @@ public:
 	}
 	constexpr Mat22<T> &operator*=(const Mat22<T> &r)
 	{
-		T t;
-
-		t = a * r.a + b * r.c;
+		T t = a * r.a + b * r.c;
 		b = a * r.b + b * r.d;
 		a = t;
 
@@ -239,7 +237,8 @@ constexpr Vec2<T> &operator*=(Vec2<T> &v, const Mat22<T> &m)
 }
 
 template <typename T>
-constexpr Vec2<T> operator*(const Mat22<T> &m, Vec2<T> v)
+constexpr Vec2<T> operator*(const Mat22<T> &m, const Vec2<T> &v)
 {
-	return v *= m;
+	// return v *= m;
+	return {m.a * v.a + m.b * v.b, m.c * v.a + m.d * v.b};
 }

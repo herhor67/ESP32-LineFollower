@@ -3,7 +3,9 @@
 #include "Mat22.h"
 #include "Math.h"
 
-#include "Motor.h"
+#include "MotorController.h"
+
+extern const char *TAG;
 
 class Vehicle
 {
@@ -12,10 +14,10 @@ public:
 	using V = Vec2<F>;
 	using M = Mat22<F>;
 
-	static constexpr F turn_radius = 10; // cm
+	static constexpr F axis_radius = 10; // cm
 
 	static constexpr M step2dist = M::unit() * Motor::encoder_resolution * Motor::wheel_radius;
-	static constexpr M dist2dso = M(0.5, 0.5, 1 / turn_radius, -1 / turn_radius);
+	static constexpr M dist2dso = M(0.5, 0.5, 0.5 / axis_radius, -0.5 / axis_radius);
 
 	static constexpr M step2dso = step2dist * dist2dso;
 	static constexpr M dso2step = ~step2dso;
@@ -23,23 +25,18 @@ public:
 	V XY = V::null();
 	F O = deg2rad(static_cast<F>(90));
 
-	Motor mtrL, mtrR;
+	MotorController *MCL;
+	MotorController *MCR;
 
 public:
-	Vehicle() {}
-	~Vehicle() = default;
+	Vehicle(MotorController *mcl, MotorController *mcr) : MCL(mcl), MCR(mcr) {}
+	~Vehicle() {}
 
-	// void reset()
-	//{
-	//	XY = V::null();
-	//	O  = deg2rad(static_cast<F>(90));
-	// }
-
-	// void move(const V& dXY, const F dO)
-	//{
-	//	XY += dXY;
-	//	O  += dO;
-	// }
+	void resetPos()
+	{
+		XY = V::null();
+		O = deg2rad(static_cast<F>(90));
+	}
 
 	void move(const F dS, const F dO)
 	{
@@ -49,32 +46,62 @@ public:
 		O += dO;
 	}
 
-	static constexpr V dlr2dso(V dLR)
+	void updateSetpoints(F dz, F dx)
+	{
+		F rds = dzx2rds(dz, dx);
+		V vlr = rds2vlr(rds);
+
+		ESP_LOGI(TAG, "Rds: %f; MtrL: %f, MtrR: %f", rds, vlr.a, vlr.b);
+
+		float Vmax = 1000;
+
+		MCL->setSetpoint(vlr.a * Vmax);
+		MCR->setSetpoint(vlr.b * Vmax);
+	}
+
+	void start()
+	{
+		MCL->start();
+		MCR->start();
+	}
+	void stop()
+	{
+		MCL->stop();
+		MCR->stop();
+	}
+
+	// ======{ STATICS }======
+
+	inline static constexpr V dlr2dso(V dLR)
 	{
 		return step2dso * dLR;
 	}
-	static constexpr V dso2dlr(V dSO)
+	inline static constexpr V dso2dlr(V dSO)
 	{
 		return dso2step * dSO;
 	}
+
+	static constexpr V rds2vlr(F turn_radius) // convert radius to velocities
+	{
+		if (std::isinf(turn_radius))
+			return {1, 1};
+
+		if (turn_radius > 0)
+			return {1, (turn_radius - axis_radius) / (turn_radius + axis_radius)};
+		if (turn_radius < 0)
+			return {(turn_radius + axis_radius) / (turn_radius - axis_radius), 1};
+
+		return {1, -1}; // turn right when exactly 180deg, should never happen lol
+	}
+
+	static F dzx2rds(F dz, F dx) // convert dz dx to appropriate turning radius
+	{
+		static constexpr F k = 1.0f / 3;
+		// if (dx == 0)
+		// 	return 1.0f / 0;
+
+		F ln = std::max(k * dz, 0.0f);
+		F rm = dz - ln;
+		return ln * (rm + std::sqrt(dx * dx + rm * rm)) / dx;
+	}
 };
-
-// function[dS, dO] = lr2so(dL, dR)
-// global Matrix_lr2soF
-// dLR = [dL; dR];
-//
-// dSO = Matrix_lr2soF * dLR;
-//
-// dS = dSO(1);
-// dO = dSO(2);
-// end
-
-// function[dL, dR] = so2lr(dS, dO)
-// global Matrix_so2lrF
-// dSO = [dS; dO];
-//
-// dLR = Matrix_so2lrF * dSO;
-//
-// dL = dLR(1);
-// dR = dLR(2);
-// end
