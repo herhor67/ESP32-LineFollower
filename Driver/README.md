@@ -2,4 +2,4 @@
 
 ESP32 Driver program
 
-![Pinout](ESP32-pinout-mapping.png)
+![Pinout](../ESP32-pinout-mapping.png)
