@@ -33,7 +33,7 @@ constexpr img_crd_t Xmax = PIC_H / PIC_SCALE;
 constexpr size_t Brdrln = size_t(Zmax) * 2 + size_t(Xmax) * 2 - 4;
 
 using rgb_img_t = Matrix<int8_t, Xmax, Zmax>;
-using bin_img_t = BitMatrix<Zmax, Xmax>;
+using bin_img_t = BitMatrix<Xmax, Zmax>;
 
 // SD card
 #include <sys/unistd.h>
@@ -49,7 +49,9 @@ using bin_img_t = BitMatrix<Zmax, Xmax>;
 
 #include "gcem.hpp"
 
-// =============
+//==============================//
+//             MISC             //
+//==============================//
 
 template <typename T>
 constexpr T deg2rad(T degrees)
@@ -68,7 +70,9 @@ static inline int64_t get_time_us()
 	return esp_timer_get_time();
 }
 
-// =============
+//==============================//
+//             I2C              //
+//==============================//
 
 static esp_err_t init_i2c()
 {
@@ -95,7 +99,9 @@ static esp_err_t init_i2c()
 	return ESP_OK;
 }
 
-// =============
+//==============================//
+//            CAMERA            //
+//==============================//
 
 static esp_err_t init_camera()
 {
@@ -119,17 +125,17 @@ static esp_err_t init_camera()
 		.pin_pclk = GPIO_NUM_22,
 
 		// XCLK 20MHz or 10MHz for OV2640 double FPS (Experimental)
-		.xclk_freq_hz = 20 * 1000 * 1000,
+		.xclk_freq_hz = 40 * 1000 * 1000,
 		.ledc_timer = LEDC_TIMER_0,
 		.ledc_channel = LEDC_CHANNEL_0,
 
 		.pixel_format = PIXFORMAT_JPEG, // YUV422,GRAYSCALE,RGB565,JPEG
 		.frame_size = FRAMESIZE_QQVGA,	// QQVGA-UXGA Do not use sizes above QVGA when not JPEG FRAMESIZE_QVGA FRAMESIZE_QQVGA
 
-		.jpeg_quality = 8,				   // 0-63 lower number means higher quality
-		.fb_count = 2,					   // if more than one, i2s runs in continuous mode. Use only with JPEG
-		.fb_location = CAMERA_FB_IN_PSRAM, // CAMERA_FB_IN_DRAM CAMERA_FB_IN_PSRAM
-		.grab_mode = CAMERA_GRAB_LATEST,   // CAMERA_GRAB_LATEST
+		.jpeg_quality = 10,					 // 0-63 lower number means higher quality
+		.fb_count = 2,						 // if more than one, i2s runs in continuous mode. Use only with JPEG
+		.fb_location = CAMERA_FB_IN_DRAM,	 // CAMERA_FB_IN_DRAM CAMERA_FB_IN_PSRAM
+		.grab_mode = CAMERA_GRAB_WHEN_EMPTY, // CAMERA_GRAB_LATEST CAMERA_GRAB_WHEN_EMPTY
 	};
 
 	esp_err_t err = esp_camera_init(&camera_config);
@@ -143,9 +149,9 @@ static esp_err_t init_camera()
 	sensor_t *s = esp_camera_sensor_get();
 
 	s->set_brightness(s, 0); // int -2 to 2
-	s->set_contrast(s, 2);	 // int -2 to 2
-	s->set_saturation(s, 2); // int -2 to 2
-	s->set_sharpness(s, 2);	 // int -2 to 2
+	s->set_contrast(s, 1);	 // int -2 to 2
+	s->set_saturation(s, 1); // int -2 to 2
+	s->set_sharpness(s, 1);	 // int -2 to 2
 	// s->set_denoise(s, 0);	 // uint ?
 
 	s->set_whitebal(s, 0); // auto white balance 0/1
@@ -170,13 +176,15 @@ static esp_err_t init_camera()
 	s->set_colorbar(s, 0); // colorbar 0/1
 
 	s->set_hmirror(s, 0);		 // horizontal mirror 0/1
-	s->set_vflip(s, 1);			 // vertical flip 0/1
+	s->set_vflip(s, 0);			 // vertical flip 0/1
 	s->set_special_effect(s, 0); // enum(0 - No Effect, 1 - Negative, 2 - Grayscale, 3 - Red Tint, 4 - Green Tint, 5 - Blue Tint, 6 - Sepia)
 
 	return ESP_OK;
 }
 
-// =============
+//==============================//
+//           SD CARD            //
+//==============================//
 
 static sdmmc_card_t init_sd()
 {
@@ -237,9 +245,11 @@ static void deinit_sd(sdmmc_card_t &card)
 	ESP_LOGI(TAG, "Card unmounted");
 }
 
-// =============
+//==============================//
+//            MODEL             //
+//==============================//
 
-typedef struct view_model
+struct view_model_t
 {
 	img_crd_t Zmax;
 	img_crd_t Xmax;
@@ -252,7 +262,9 @@ typedef struct view_model
 	float dz_ttl;
 	float dx_frnt;
 	float dx_back;
-} view_model_t;
+	img_crd_t Zctr;
+	img_crd_t Xctr;
+};
 
 constexpr view_model_t model_generator(float c_h, float c_p, float l_a)
 {
@@ -285,10 +297,11 @@ constexpr view_model_t model_generator(float c_h, float c_p, float l_a)
 	t.dx_frnt = dst_fwd * t.lens_sdws_tan;
 	t.dx_back = dst_bwd * t.lens_sdws_tan;
 
+	t.Zctr = gcem::floor(Zmax * 0.5f * (1 + t.cam_pitch_tan / t.lens_twrd_tan));
+	t.Xctr = gcem::floor(Xmax * 0.5f);
+
 	return t;
 }
-
-// =============
 
 constexpr std::pair<float, float> px2dst(const std::pair<img_crd_t, img_crd_t> &px_crds, const view_model_t &vm)
 {
@@ -372,25 +385,63 @@ constexpr auto pixel_generate_pos()
 	return border;
 }
 
+struct px_params_t
+{
+	float dst = 0;
+	float sin = 0;
+	float cos = 0;
+	img_crd_t cnt = 0;
+
+	px_params_t &operator+=(const px_params_t &rhs)
+	{
+		dst += rhs.dst;
+		sin += rhs.sin;
+		cos += rhs.cos;
+		cnt += rhs.cnt;
+		return *this;
+	}
+	px_params_t &clear()
+	{
+		dst = 0;
+		sin = 0;
+		cos = 0;
+		cnt = 0;
+		return *this;
+	}
+	px_params_t &norm()
+	{
+		dst /= cnt;
+		sin /= cnt;
+		cos /= cnt;
+		cnt = 1;
+		return *this;
+	}
+};
+
 constexpr auto pixel_generate_params(const std::array<std::pair<img_crd_t, img_crd_t>, Brdrln> &px_crds, const view_model_t &vm)
 {
-	std::array<std::tuple<float, float, float>, Brdrln> table = {};
+	std::array<px_params_t, Brdrln> table = {};
 
 	for (size_t i = 0; i < Brdrln; ++i)
 	{
 		auto zx = px2dst(px_crds[i], vm);
 		float dist = gcem::sqrt(zx.first * zx.first + zx.second * zx.second);
-		std::get<0>(table[i]) = dist;
-		std::get<1>(table[i]) = zx.first / dist;
-		std::get<2>(table[i]) = zx.second / dist;
+		table[i] = {
+			.dst = dist,
+			.sin = zx.first / dist,
+			.cos = zx.second / dist,
+			.cnt = 1,
+		};
 	}
 
 	return table;
 }
 
-// =============
+//==============================//
+//            SOBEL             //
+//==============================//
 
-bin_img_t sobel_operator(rgb_img_t img)
+void sobel_operator(const rgb_img_t &img, rgb_img_t &sob)
 {
 	constexpr int w[] = {1, 2, 1};
 	constexpr int div = 1 + 2 + 1;
@@ -399,15 +450,49 @@ bin_img_t sobel_operator(rgb_img_t img)
 	// constexpr int[] w = {47, 162, 47};
 	// constexpr int div = 47 + 162 + 47;
 
-	bin_img_t map;
-
-	auto fun = [&w, &div, &map](size_t i, size_t j, int8_t e11, int8_t e12, int8_t e13, int8_t e21, int8_t e22, int8_t e23, int8_t e31, int8_t e32, int8_t e33) -> void
+	auto fun = [&w, &div, &sob](ptrdiff_t i, ptrdiff_t j, int8_t e11, int8_t e12, int8_t e13, int8_t e21, int8_t e22, int8_t e23, int8_t e31, int8_t e32, int8_t e33) -> void
 	{
 		int Gi = w[0] * (e11 - e13) + w[1] * (e21 - e23) + w[2] * (e31 - e33);
 		int Gj = w[0] * (e11 - e31) + w[1] * (e12 - e32) + w[2] * (e13 - e33);
 
-		// map(i, j) = sqrt(Gi*Gi + Gj*Gj) / div;
-		map(j, i) = (std::abs(Gi) + std::abs(Gj)) / div > 16;
+		int val = std::abs(Gi) + std::abs(Gj);
+		// int val = std::sqrt(Gi * Gi + Gj * Gj);
+		sob(i, j) = std::min(val / div, (int)std::numeric_limits<rgb_img_t::elem_t>::max());
+	};
+
+	for (ptrdiff_t ic = 0; ic < Xmax; ++ic)
+		for (ptrdiff_t jc = 0; jc < Zmax; ++jc)
+		{
+			ptrdiff_t im = std::max(ic - 1, 0);
+			ptrdiff_t ip = std::min(ic + 1, Xmax - 1);
+			ptrdiff_t jm = std::max(jc - 1, 0);
+			ptrdiff_t jp = std::min(jc + 1, Zmax - 1);
+			fun(ic, jc,
+				img(im, jm), img(im, jc), img(im, jp),
+				img(ic, jm), img(ic, jc), img(ic, jp),
+				img(ip, jm), img(ip, jc), img(ip, jp));
+		}
+}
+
+/*/
+
+void sobel_operator(const rgb_img_t &img, rgb_img_t &sob)
+{
+	constexpr int w[] = {1, 2, 1};
+	constexpr int div = 1 + 2 + 1;
+	// constexpr int[] w = {3, 10, 3};
+	// constexpr int div = 3 + 10 + 3;
+	// constexpr int[] w = {47, 162, 47};
+	// constexpr int div = 47 + 162 + 47;
+
+	auto fun = [&w, &div, &sob](size_t i, size_t j, int8_t e11, int8_t e12, int8_t e13, int8_t e21, int8_t e22, int8_t e23, int8_t e31, int8_t e32, int8_t e33) -> void
+	{
+		int Gi = w[0] * (e11 - e13) + w[1] * (e21 - e23) + w[2] * (e31 - e33);
+		int Gj = w[0] * (e11 - e31) + w[1] * (e12 - e32) + w[2] * (e13 - e33);
+
+		int val = std::abs(Gi) + std::abs(Gj);
+		// int val = std::sqrt(Gi * Gi + Gj * Gj);
+		sob(i, j) = std::min(val / div, (int)std::numeric_limits<rgb_img_t::elem_t>::max());
 	};
 
 	size_t i = 0;
@@ -437,6 +522,118 @@ bin_img_t sobel_operator(rgb_img_t img)
 		fun(i, j, img(i - 1, j - 1), img(i - 1, j), img(i - 1, j + 1), img(i, j - 1), img(i, j), img(i, j + 1), img(i, j - 1), img(i, j), img(i, j + 1));
 
 	fun(i, j, img(i - 1, j - 1), img(i - 1, j), img(i - 1, j), img(i, j - 1), img(i, j), img(i, j), img(i, j - 1), img(i, j), img(i, j));
+}
 
-	return map;
+
+void sobel_operator(const rgb_img_t &img, bin_img_t &map)
+{
+	constexpr int w[] = {1, 2, 1};
+	constexpr int div = 1 + 2 + 1;
+	// constexpr int[] w = {3, 10, 3};
+	// constexpr int div = 3 + 10 + 3;
+	// constexpr int[] w = {47, 162, 47};
+	// constexpr int div = 47 + 162 + 47;
+
+	auto fun = [&w, &div, &map](size_t i, size_t j, int8_t e11, int8_t e12, int8_t e13, int8_t e21, int8_t e22, int8_t e23, int8_t e31, int8_t e32, int8_t e33) -> void
+	{
+		int Gi = w[0] * (e11 - e13) + w[1] * (e21 - e23) + w[2] * (e31 - e33);
+		int Gj = w[0] * (e11 - e31) + w[1] * (e12 - e32) + w[2] * (e13 - e33);
+
+		int val = std::abs(Gi) + std::abs(Gj);
+		// int val = std::sqrt(Gi * Gi + Gj * Gj);
+		map(i, j) = val > (16 * div);
+	};
+
+	size_t i = 0;
+	size_t j = 0;
+	fun(i, j, img(i, j), img(i, j), img(i, j + 1), img(i, j), img(i, j), img(i, j + 1), img(i + 1, j), img(i + 1, j), img(i + 1, j + 1));
+
+	for (size_t j = 1; j < Zmax - 1; ++j)
+		fun(i, j, img(i, j - 1), img(i, j), img(i, j + 1), img(i, j - 1), img(i, j), img(i, j + 1), img(i + 1, j - 1), img(i + 1, j), img(i + 1, j + 1));
+
+	fun(i, j, img(i, j - 1), img(i, j), img(i, j), img(i, j - 1), img(i, j), img(i, j), img(i + 1, j - 1), img(i + 1, j), img(i + 1, j));
+
+	for (i = 1; i < Xmax - 1; ++i)
+	{
+		j = 0;
+		fun(i, j, img(i - 1, j), img(i - 1, j), img(i - 1, j + 1), img(i, j), img(i, j), img(i, j + 1), img(i + 1, j), img(i + 1, j), img(i + 1, j + 1));
+
+		for (j = 1; j < Zmax - 1; ++j)
+			fun(i, j, img(i - 1, j - 1), img(i - 1, j), img(i - 1, j + 1), img(i, j - 1), img(i, j), img(i, j + 1), img(i + 1, j - 1), img(i + 1, j), img(i + 1, j + 1));
+
+		fun(i, j, img(i - 1, j - 1), img(i - 1, j), img(i - 1, j), img(i, j - 1), img(i, j), img(i, j), img(i + 1, j - 1), img(i + 1, j), img(i + 1, j));
+	}
+
+	j = 0;
+	fun(i, j, img(i - 1, j), img(i - 1, j), img(i - 1, j + 1), img(i, j), img(i, j), img(i, j + 1), img(i, j), img(i, j), img(i, j + 1));
+
+	for (j = 1; j < Zmax - 1; ++j)
+		fun(i, j, img(i - 1, j - 1), img(i - 1, j), img(i - 1, j + 1), img(i, j - 1), img(i, j), img(i, j + 1), img(i, j - 1), img(i, j), img(i, j + 1));
+
+	fun(i, j, img(i - 1, j - 1), img(i - 1, j), img(i - 1, j), img(i, j - 1), img(i, j), img(i, j), img(i, j - 1), img(i, j), img(i, j));
+}
+//*/
+
+//==============================//
+//          IMBINARIZE          //
+//==============================//
+
+void imbinarize(const rgb_img_t &sob, bin_img_t &ibw)
+{
+	int8_t mxm = sob.max();
+	int8_t mnm = sob.min();
+	int8_t avg = sob.avg();
+	int8_t thr = avg + (mxm - avg) / 20;
+
+	for (size_t i = 0; i < Xmax; ++i)
+		for (size_t j = 0; j < Zmax; ++j)
+			ibw.set(i, j, sob(i, j) > thr);
+}
+
+//==============================//
+//         ROW FILLERS          //
+//==============================//
+
+void fill_row(bin_img_t &map, bin_img_t &edg, size_t x)
+{
+	static bin_img_t::row_t old;
+	do
+	{
+		old = map[x];
+		map[x] |= map[x] << 1 | map[x] >> 1;
+		map[x] &= edg[x];
+
+	} while (map[x] != old);
+}
+void fill_rows_cmx(bin_img_t &map, bin_img_t &edg, size_t ctrX)
+{
+	for (size_t i = ctrX + 1; i < Xmax; ++i)
+	{
+		map[i] |= map[i - 1] & edg[i];
+		fill_row(map, edg, i);
+	}
+}
+void fill_rows_cmn(bin_img_t &map, bin_img_t &edg, size_t ctrX)
+{
+	for (size_t i = ctrX - 1; i != -1; --i)
+	{
+		map[i] |= map[i + 1] & edg[i];
+		fill_row(map, edg, i);
+	}
+}
+void fill_rows_mxc(bin_img_t &map, bin_img_t &edg, size_t ctrX)
+{
+	for (size_t i = Xmax - 2; i >= ctrX; --i)
+	{
+		map[i] |= map[i + 1] & edg[i];
+		fill_row(map, edg, i);
+	}
+}
+void fill_rows_mnc(bin_img_t &map, bin_img_t &edg, size_t ctrX)
+{
+	for (size_t i = 1; i <= ctrX; ++i)
+	{
+		map[i] |= map[i - 1] & edg[i];
+		fill_row(map, edg, i);
+	}
 }

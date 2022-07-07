@@ -35,10 +35,11 @@ std::bitset<N> rotr1(const std::bitset<N> &bits)
 		return (bits >> 1);
 }
 
+/*/
 template <size_t toN, size_t fromN>
 constexpr std::bitset<toN> bitset_cast(std::bitset<fromN> start)
 {
-	using word = std::bitset<fromN>::_Ty;
+	using word = typename std::bitset<fromN>::_WordT;
 	constexpr size_t word_w = CHAR_BIT * sizeof(word);
 	constexpr size_t word_c = fromN == 0 ? 0 : (fromN - 1) / word_w;
 
@@ -51,6 +52,7 @@ constexpr std::bitset<toN> bitset_cast(std::bitset<fromN> start)
 	}
 	return result;
 }
+//*/
 
 /*/
 template <size_t toN = 556, size_t fromN = 160>

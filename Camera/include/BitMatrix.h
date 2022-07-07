@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <iostream>
+#include <algorithm>
 #include <array>
 #include <bitset>
 #include <iterator>
@@ -15,42 +16,80 @@ class BitMatrix
 	static_assert(H >= 1, "Height must be greater than 0!");
 	static_assert(W >= 1, "Width  must be greater than 0!");
 
-	using row = std::bitset<W>;
+public:
+	using row_t = std::bitset<W>;
 	using this_t = BitMatrix<H, W>;
 	using crd_t = MinUInt<std::max(H, W)>;
 	using idx_t = MinUInt<H * W>;
 
-	std::array<row, H> content;
+protected:
+	std::array<row_t, H> content;
 
 public:
 	BitMatrix() {}
 	~BitMatrix() {}
 
-	constexpr row &operator[](size_t pos) const
+	// typename???
+
+	inline constexpr row_t &operator[](size_t pos)
 	{
 		return content[pos];
 	}
 
-	constexpr bool operator()(size_t y, size_t x) const
+	inline constexpr bool operator()(size_t y, size_t x) const
+	{
+		return content[y][W - x - 1];
+	}
+	inline typename row_t::reference operator()(size_t y, size_t x)
 	{
 		return content[y][W - x - 1];
 	}
 
-	typename row::reference operator()(size_t y, size_t x)
+	inline constexpr bool operator()(std::pair<size_t, size_t> yx) const
 	{
-		//		std::bitset<W>::reference temp = content[y][W - x - 1];
-		//		return temp;
-		return content[y][W - x - 1];
+		return content[yx.first][W - yx.second - 1];
+	}
+	inline typename row_t::reference operator()(std::pair<size_t, size_t> yx)
+	{
+		return content[yx.first][W - yx.second - 1];
 	}
 
-	constexpr bool operator()(size_t pos) const
+	inline constexpr bool operator()(size_t pos) const
+	{
+		return content[pos / W][W - pos % W - 1];
+	}
+	inline typename row_t::reference operator()(size_t pos)
 	{
 		return content[pos / W][W - pos % W - 1];
 	}
 
-	typename row::reference operator()(size_t pos)
+	inline constexpr bool test(size_t y, size_t x) const
 	{
-		return content[pos / W][W - pos % W - 1];
+		return content[y].test(W - x - 1);
+	}
+	inline constexpr bool test(std::pair<size_t, size_t> yx) const
+	{
+		return content[yx.first].test(W - yx.second - 1);
+	}
+	inline constexpr bool test(size_t pos) const
+	{
+		return content[pos / W].test(W - pos % W - 1);
+	}
+
+	inline constexpr this_t &set(size_t y, size_t x, bool v = true)
+	{
+		content[y].set(W - x - 1, v);
+		return *this;
+	}
+	inline constexpr this_t &set(std::pair<size_t, size_t> yx, bool v = true)
+	{
+		content[yx.first].set(W - yx.second - 1, v);
+		return *this;
+	}
+	inline constexpr this_t &set(size_t pos, bool v = true)
+	{
+		content[pos / W].set(W - pos % W - 1, v);
+		return *this;
 	}
 
 	// Contradiction           | 0    | 0
@@ -361,11 +400,20 @@ public:
 		return true;
 	}
 
-	template <size_t Ha, size_t Wa>
-	friend std::ostream &operator<<(std::ostream &os, const BitMatrix<Ha, Wa> &A)
+	//	template <size_t Ha, size_t Wa>
+	//	friend std::ostream &operator<<(std::ostream &os, const BitMatrix<Ha, Wa> &A)
+	friend std::ostream &operator<<(std::ostream &os, const this_t &A)
 	{
 		for (size_t y = 0; y < H; ++y)
-			os << A.content[y].to_string('.', '#') << std::endl;
+			os << A.content[y].to_string('.', '#') << " " << y << std::endl;
+
+		for (size_t x = 0; x < W; ++x)
+			os << (x % 100) / 10;
+		os << std::endl;
+		for (size_t x = 0; x < W; ++x)
+			os << x % 10;
+		os << std::endl;
+
 		os << "Any: " << A.any() << ", All: " << A.all() << ", None: " << A.none() << std::endl
 		   << std::endl;
 
@@ -388,12 +436,12 @@ public:
 				}
 				else
 				{
-					row prev = content[0];
+					row_t prev = content[0];
 					content[0] |= content[1];
 
 					for (size_t y = 1; y < H - 1; ++y)
 					{
-						row temp = content[y];
+						row_t temp = content[y];
 						content[y] |= content[y + 1] | prev;
 						prev = temp;
 					}
@@ -412,12 +460,12 @@ public:
 				}
 				else
 				{
-					row prev = content[0];
+					row_t prev = content[0];
 					content[0] |= content[0] << 1 | content[0] >> 1 | content[1];
 
 					for (size_t y = 1; y < H - 1; ++y)
 					{
-						row temp = content[y];
+						row_t temp = content[y];
 						content[y] |= content[y] << 1 | content[y] >> 1 | content[y + 1] | prev;
 						prev = temp;
 					}
@@ -448,12 +496,12 @@ public:
 				}
 				else
 				{
-					row prev = content[0];
+					row_t prev = content[0];
 					content[0].reset();
 
 					for (size_t y = 1; y < H - 1; ++y)
 					{
-						row temp = content[y];
+						row_t temp = content[y];
 						content[y] &= content[y + 1] & prev;
 						prev = temp;
 					}
@@ -472,12 +520,12 @@ public:
 				}
 				else
 				{
-					row prev = content[0];
+					row_t prev = content[0];
 					content[0].reset();
 
 					for (size_t y = 1; y < H - 1; ++y)
 					{
-						row temp = content[y];
+						row_t temp = content[y];
 						content[y] &= content[y] << 1 & content[y] >> 1 & content[y + 1] & prev;
 						prev = temp;
 					}
@@ -506,6 +554,14 @@ public:
 	}
 };
 
+//
+
+//
+
+//
+
+//
+
 // template <typename T, size_t H, size_t W, std::enable_if_t<std::conjunction_v<std::is_arithmetic<T>, std::negation<std::is_same<T, bool>>>, bool> = true>
 template <typename T, size_t H, size_t W>
 class Matrix
@@ -514,19 +570,29 @@ class Matrix
 	static_assert(H >= 1, "Height must be greater than 0!");
 	static_assert(W >= 1, "Width  must be greater than 0!");
 
-	using row = std::array<T, W>;
+public:
+	using elem_t = T;
+	using row_t = std::array<T, W>;
 	using this_t = Matrix<T, H, W>;
 	using this_bool_t = BitMatrix<H, W>;
 	using crd_t = MinUInt<std::max(H, W)>;
 	using idx_t = MinUInt<H * W>;
+	using sum_t = FastSum<H * W, T>;
+	class iterator;
+	class const_iterator;
 
-	std::array<row, H> content;
+public:
+	std::array<row_t, H> content;
 
 public:
 	constexpr Matrix() : content({}) {}
 	~Matrix() {}
 
-	constexpr row &operator[](size_t pos) const
+	constexpr row_t &operator[](size_t pos)
+	{
+		return content[pos];
+	}
+	constexpr const row_t &operator[](size_t pos) const
 	{
 		return content[pos];
 	}
@@ -624,7 +690,6 @@ public:
 					return true;
 		return false;
 	}
-
 	bool all() const
 	{
 		for (size_t y = 0; y < H; ++y)
@@ -633,7 +698,6 @@ public:
 					return false;
 		return true;
 	}
-
 	bool none() const
 	{
 		for (size_t y = 0; y < H; ++y)
@@ -643,8 +707,46 @@ public:
 		return true;
 	}
 
-	template <typename Ta, size_t Ha, size_t Wa>
-	friend std::ostream &operator<<(std::ostream &os, const Matrix<Ta, Ha, Wa> &A)
+	const_iterator min_element() const
+	{
+		return std::min_element(begin(), end());
+	}
+	const_iterator max_element() const
+	{
+		return std::max_element(begin(), end());
+	}
+
+	T min() const
+	{
+		return *min_element();
+	}
+	T max() const
+	{
+		return *max_element();
+	}
+
+	sum_t sum() const
+	{
+		sum_t sum = 0;
+		for (auto it = begin(); it != end(); ++it)
+			sum += *it;
+		return sum;
+	}
+	T avg() const
+	{
+		return sum() / (W * H);
+	}
+
+	std::pair<crd_t, crd_t> ind2sub(const_iterator it) const
+	{
+		// size_t pos = &(*it) - &(*begin());
+		size_t pos = it - begin();
+		return {pos / W, pos % W};
+	}
+
+	//	template <typename Ta, size_t Ha, size_t Wa>
+	//	friend std::ostream &operator<<(std::ostream &os, const Matrix<Ta, Ha, Wa> &A)
+	friend std::ostream &operator<<(std::ostream &os, const this_t &A)
 	{
 		for (size_t y = 0; y < H; ++y)
 		{
@@ -652,7 +754,7 @@ public:
 				os << +A.content[y][x] << '\t';
 			os << std::endl;
 		}
-		os << "Any: " << A.any() << ", All: " << A.all() << ", None: " << A.none() << std::endl
+		os << H << "x" << W << ", Any: " << A.any() << ", All: " << A.all() << ", None: " << A.none() << std::endl
 		   << std::endl;
 
 		return os;
@@ -672,21 +774,35 @@ public:
 		typedef std::forward_iterator_tag iterator_category;
 		typedef std::ptrdiff_t difference_type;
 		iterator(pointer ptr) : ptr_(ptr) {}
-		self_type operator++()
-		{
-			self_type i = *this;
-			ptr_++;
-			return i;
-		}
-		self_type operator++(int junk)
-		{
-			ptr_++;
-			return *this;
-		}
 		reference operator*() { return *ptr_; }
 		pointer operator->() { return ptr_; }
 		bool operator==(const self_type &rhs) { return ptr_ == rhs.ptr_; }
 		bool operator!=(const self_type &rhs) { return ptr_ != rhs.ptr_; }
+		self_type operator++()
+		{
+			++ptr_;
+			return *this;
+		}
+		self_type operator++(int post)
+		{
+			self_type i = *this;
+			++ptr_;
+			return i;
+		}
+		self_type operator--()
+		{
+			--ptr_;
+			return *this;
+		}
+		self_type operator--(int post)
+		{
+			self_type i = *this;
+			--ptr_;
+			return i;
+		}
+		self_type operator+(const difference_type &dif) { return ptr_ + dif; }
+		self_type operator-(const difference_type &dif) { return ptr_ - dif; }
+		difference_type operator-(const self_type &rhs) { return std::distance(rhs.ptr_, ptr_); }
 
 	private:
 		pointer ptr_;
@@ -696,27 +812,41 @@ public:
 	{
 	public:
 		typedef const_iterator self_type;
-		typedef T value_type;
-		typedef T &reference;
-		typedef T *pointer;
+		typedef const T value_type;
+		typedef const T &reference;
+		typedef const T *pointer;
 		typedef std::ptrdiff_t difference_type;
 		typedef std::forward_iterator_tag iterator_category;
 		const_iterator(pointer ptr) : ptr_(ptr) {}
-		self_type operator++()
-		{
-			self_type i = *this;
-			ptr_++;
-			return i;
-		}
-		self_type operator++(int junk)
-		{
-			ptr_++;
-			return *this;
-		}
-		const reference operator*() { return *ptr_; }
-		const pointer operator->() { return ptr_; }
+		reference operator*() { return *ptr_; }
+		pointer operator->() { return ptr_; }
 		bool operator==(const self_type &rhs) { return ptr_ == rhs.ptr_; }
 		bool operator!=(const self_type &rhs) { return ptr_ != rhs.ptr_; }
+		self_type operator++()
+		{
+			++ptr_;
+			return *this;
+		}
+		self_type operator++(int post)
+		{
+			self_type i = *this;
+			++ptr_;
+			return i;
+		}
+		self_type operator--()
+		{
+			--ptr_;
+			return *this;
+		}
+		self_type operator--(int post)
+		{
+			self_type i = *this;
+			--ptr_;
+			return i;
+		}
+		self_type operator+(const difference_type &dif) { return ptr_ + dif; }
+		self_type operator-(const difference_type &dif) { return ptr_ - dif; }
+		difference_type operator-(const self_type &rhs) { return std::distance(rhs.ptr_, ptr_); }
 
 	private:
 		pointer ptr_;

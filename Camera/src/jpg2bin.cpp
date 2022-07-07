@@ -106,7 +106,7 @@ static bool _bin_write(void *arg, uint16_t x, uint16_t y, uint16_t w, uint16_t h
 			uint8_t g = data[ix + 1];
 			uint8_t b = data[ix + 2];
 			// o[ix2] = (r / 3 + g / 3 + b / 3 + ((r % 3 + g % 3 + b % 3) / 3)) >> 1; // integer average
-			o[ix2] = (r > g ? (r > b ? r : b) : (g > b ? g : b)) >> 1; // integer max
+			o[ix2] = (r > g ? (r > b ? r : b) : (g > b ? g : b)) / 2; // integer max
 		}
 		data += w;
 	}
