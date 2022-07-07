@@ -14,7 +14,7 @@ public:
 	using V = Vec2<F>;
 	using M = Mat22<F>;
 
-	static constexpr F axis_radius = 10; // cm
+	static constexpr F axis_radius = 80; // mm
 
 	static constexpr M step2dist = M::unit() * Motor::encoder_resolution * Motor::wheel_radius;
 	static constexpr M dist2dso = M(0.5, 0.5, 0.5 / axis_radius, -0.5 / axis_radius);
@@ -53,10 +53,8 @@ public:
 
 		ESP_LOGI(TAG, "Rds: %f; MtrL: %f, MtrR: %f", rds, vlr.a, vlr.b);
 
-		float Vmax = 1000;
-
-		MCL->setSetpoint(vlr.a * Vmax);
-		MCR->setSetpoint(vlr.b * Vmax);
+		MCL->setSetpoint(vlr.a * Motor::Vmax);
+		MCR->setSetpoint(vlr.b * Motor::Vmax);
 	}
 
 	void start()
@@ -83,6 +81,8 @@ public:
 
 	static constexpr V rds2vlr(F turn_radius) // convert radius to velocities
 	{
+		if (std::isnan(turn_radius))
+			return {0, 0};
 		if (std::isinf(turn_radius))
 			return {1, 1};
 
@@ -96,9 +96,10 @@ public:
 
 	static F dzx2rds(F dz, F dx) // convert dz dx to appropriate turning radius
 	{
-		static constexpr F k = 1.0f / 3;
-		// if (dx == 0)
-		// 	return 1.0f / 0;
+		static constexpr F k = 1.0f / 2;
+
+		if ((dz == 0 && dx == 0) || std::abs(dz) > 200.f || std::abs(dx) > 200.f)
+			return 0.0 / 0.0;
 
 		F ln = std::max(k * dz, 0.0f);
 		F rm = dz - ln;

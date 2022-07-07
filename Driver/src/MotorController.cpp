@@ -1,4 +1,6 @@
 
+// #include <functional>
+
 #include <esp_log.h>
 
 #include "MotorController.h"
@@ -20,7 +22,7 @@ MotorController::MotorController(Motor *mtr, ESP32Encoder *enc, Controller<> *ct
 
 MotorController::~MotorController()
 {
-	ESP_ERROR_CHECK(esp_timer_stop(periodic_timer));
+	stop();
 	ESP_ERROR_CHECK(esp_timer_delete(periodic_timer));
 }
 
@@ -44,19 +46,27 @@ void MotorController::setSetpoint(float sp)
 
 void MotorController::start()
 {
-	time_last = esp_timer_get_time();
-	tick_last = encoder->getCount();
-	curr_speed = 0.0 / 0.0;
-	// encoder->resumeCount();
-	// encoder->clearCount();
-	ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 10 * 1000)); // every 10ms
+	if (!is_on())
+	{
+		time_last = esp_timer_get_time();
+		tick_last = encoder->getCount();
+		curr_speed = 0.0 / 0.0;
+		ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 10 * 1000)); // every 10ms
+	}
 }
 void MotorController::stop()
 {
-	// encoder->pauseCount();
-	ESP_ERROR_CHECK(esp_timer_stop(periodic_timer));
-	ESP_ERROR_CHECK(esp_timer_delete(periodic_timer));
-	motor->stop();
+	if (is_on())
+	{
+		ESP_ERROR_CHECK(esp_timer_stop(periodic_timer));
+		ESP_ERROR_CHECK(esp_timer_delete(periodic_timer));
+		motor->stop();
+	}
+}
+
+bool MotorController::is_on()
+{
+	return esp_timer_is_active(periodic_timer);
 }
 
 // static
@@ -79,7 +89,7 @@ void MotorController::callback(void *arg)
 	if (std::isnan(MC->curr_speed))
 		MC->curr_speed = dxdt;
 
-	float rmmbrfctr = std::exp(-dt * 5); //  / 1e6f
+	float rmmbrfctr = std::exp(-dt * 8); //  / 1e6f
 	MC->curr_speed = rmmbrfctr * MC->curr_speed + (1 - rmmbrfctr) * dxdt;
 
 	// MC->updateSetpoint();

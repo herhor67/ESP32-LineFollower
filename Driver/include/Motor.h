@@ -12,8 +12,9 @@ public:
 	using I = int;
 	friend class Vehicle;
 
-	static constexpr F wheel_radius = 2;								  // cm
+	static constexpr F wheel_radius = 20;								  // mm
 	static constexpr F encoder_resolution = deg2rad(static_cast<F>(0.5)); // 720/rot = 1/0.5deg = ???/rad
+	static constexpr F Vmax = 1250;
 
 	mcpwm_unit_t mcpwm_num = MCPWM_UNIT_0;
 	mcpwm_timer_t timer_num = MCPWM_TIMER_0;

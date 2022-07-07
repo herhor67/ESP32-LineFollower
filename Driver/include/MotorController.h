@@ -37,6 +37,8 @@ public:
 	void start();
 	void stop();
 
+	bool is_on();
+
 private:
 	static void callback(void *);
 };

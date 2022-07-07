@@ -1,5 +1,6 @@
 
-#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+// #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#define LOG_LOCAL_LEVEL ESP_LOG_WARN
 
 // CPP headers
 #include <inttypes.h>
@@ -35,8 +36,10 @@
 #include "Buzzer.h"
 #include "functions.h"
 
-//
-//
+#define PIN_BLINK GPIO_NUM_2
+#define PIN_STATUS GPIO_NUM_12
+#define PIN_EN_IN GPIO_NUM_16
+#define PIN_GO_IN GPIO_NUM_17
 
 // static const musical_buzzer_notation_t notation[] = {
 // 	{740, 400},
@@ -200,14 +203,24 @@ const char *TAG = "[" __TIME__
 
 extern "C" void app_main(void)
 {
-
-	ESP_LOGI(TAG, "Wstało!");
-
 	for (int p : {12, 13, 14, 15})
 	{
 		PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[p], PIN_FUNC_GPIO);
 		gpio_reset_pin(static_cast<gpio_num_t>(p));
 	}
+
+	// gpio_install_isr_service();
+
+	gpio_set_direction(PIN_BLINK, GPIO_MODE_OUTPUT);  // blink LED
+	gpio_set_direction(PIN_STATUS, GPIO_MODE_OUTPUT); // status pin
+
+	gpio_set_direction(PIN_EN_IN, GPIO_MODE_INPUT); // enable signal
+	gpio_set_pull_mode(PIN_EN_IN, GPIO_PULLDOWN_ONLY);
+
+	gpio_set_direction(PIN_GO_IN, GPIO_MODE_INPUT); // drive signal
+	gpio_set_pull_mode(PIN_GO_IN, GPIO_PULLUP_ONLY);
+	// gpio_set_intr_type(PIN_GO_IN, GPIO_INTR_NEGEDGE);
+	// gpio_intr_enable(PIN_GO_IN);
 
 	esp_err_t i2c = init_i2c();
 	if (i2c != ESP_OK)
@@ -231,19 +244,14 @@ extern "C" void app_main(void)
 	motorR.initialize();
 
 	PI__Controller<float> controllerL;
-	controllerL.setTs(1, 0.03, 0);
+	controllerL.setTs(0.8, 0.02, 0);
 	controllerL.setOmax(100);
 	controllerL.setOmin(-100);
 	controllerL.P.setOmax(50);
 	controllerL.P.setOmin(-50);
 	controllerL.I.setOmax(1000);
 	controllerL.I.setOmin(-1000);
-
 	PI__Controller<float> controllerR = controllerL;
-
-	uint8_t mess[2 * sizeof(int)] = {0};
-	uint8_t *messbyte = &mess[0];
-	int *messint = reinterpret_cast<int *>(messbyte);
 
 	MotorController MotCtrlL(&motorL, &encoderL, &controllerL);
 	MotorController MotCtrlR(&motorR, &encoderR, &controllerR);
@@ -256,24 +264,50 @@ extern "C" void app_main(void)
 	// bzr.loadSong(&stlphn_nts[0], &stlphn_drtn[0], 10); // sizeof(melody) / sizeof(melody[0])
 	// bzr.start(false);
 
-	vehicle.start();
+	float mess[2] = {0, 0};
+	uint8_t *messbyte = reinterpret_cast<uint8_t *>(&mess);
+
+	size_t null_counter = 0;
+
+	gpio_set_level(PIN_STATUS, 1); // enable status pin
+	while (!gpio_get_level(PIN_EN_IN))
+		vTaskDelay(1);
+
+	bool blinker = false;
 
 	while (1)
 	{
-		int res = i2c_slave_read_buffer(I2C_NUM_0, messbyte, 15, 0);
+		gpio_set_level(PIN_BLINK, blinker = !blinker);
 
-		if (res > 0)
+		if (!gpio_get_level(PIN_GO_IN))
+			vehicle.start();
+
+		int res = i2c_slave_read_buffer(I2C_NUM_0, messbyte, sizeof(mess), 10);
+
+		if (res == sizeof(mess))
 		{
-			int dz = messint[0];
-			int dx = messint[1];
+			float dz = mess[0];
+			float dx = mess[1];
 			std::cout << dz << '\t' << dx << std::endl;
 
 			vehicle.updateSetpoints(dz, dx);
+
+			null_counter = 0;
+		}
+		else
+		{
+			//			std::cout << "None" << std::endl;
+			if (++null_counter >= 20)
+			{
+				if (null_counter == 20)
+					vehicle.updateSetpoints(0, 0);
+				null_counter = 20;
+			}
 		}
 
 		//	vehicle.updateSetpoints(100, 1000);
 
-		// vTaskDelay(1);
+		vTaskDelay(1);
 
 		// ESP_LOGI(TAG, "PWM: %f ; EncoderL: %" PRId64 " ; EncoderR: %" PRId64, PWM, encoderL.getCount(), encoderR.getCount());
 

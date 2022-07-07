@@ -39,7 +39,7 @@ static esp_err_t init_i2c()
 		.scl_io_num = GPIO_NUM_13,
 		.sda_pullup_en = GPIO_PULLUP_DISABLE,
 		.scl_pullup_en = GPIO_PULLUP_DISABLE,
-		.slave = {.addr_10bit_en = 0, .slave_addr = 0x11, .maximum_speed = 500000},
+		.slave = {.addr_10bit_en = 0, .slave_addr = 0x67, .maximum_speed = 500000},
 		.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL,
 	};
 
